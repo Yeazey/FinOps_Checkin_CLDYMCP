@@ -11,18 +11,20 @@ import { renderTerminal } from './output/terminal.mjs';
 
 async function main() {
   const start = Date.now();
-  console.log('🚀 FinOps Daily Check-in — Starting multi-agent analysis...\n');
+  const jsonMode = process.argv.includes('--json');
+  const log = jsonMode ? () => {} : console.log.bind(console);
+  log('🚀 FinOps Daily Check-in — Starting multi-agent analysis...\n');
 
   const collector = new DataCollector();
   await collector.connect();
-  console.log('✅ Connected to Cloudability MCP\n');
+  log('✅ Connected to Cloudability MCP\n');
 
   // Phase 1: Broad data collection
   const data = await collector.collectAll();
-  console.log(`\n✅ Base data collected (${((Date.now() - start) / 1000).toFixed(1)}s)\n`);
+  log(`\n✅ Base data collected (${((Date.now() - start) / 1000).toFixed(1)}s)\n`);
 
   // Phase 2: Agent analysis (identifies signals)
-  console.log('🤖 Running 6 analysis agents...');
+  log('🤖 Running 6 analysis agents...');
   const costs = analyzeCosts(data);
   const forecast = analyzeForecastBudget(data);
   const optimization = analyzeOptimization(data);
@@ -30,7 +32,7 @@ async function main() {
   const operations = analyzeOperations(data);
 
   // Phase 3: Deep dives — agents found interesting things, now drill down
-  console.log('\n🔬 Phase 3: Deep-dive investigations on findings...');
+  log('\n🔬 Phase 3: Deep-dive investigations on findings...');
   const deepDives = {};
 
   // Deep dive into new services
@@ -57,16 +59,22 @@ async function main() {
   }
 
   await collector.disconnect();
-  console.log(`\n✅ Deep dives complete (${((Date.now() - start) / 1000).toFixed(1)}s total)\n`);
+  log(`\n✅ Deep dives complete (${((Date.now() - start) / 1000).toFixed(1)}s total)\n`);
 
   // Phase 4: Actions agent with deep dive context
   const actions = analyzeActions({ costs, forecast, optimization, anomalies, operations, deepDives });
 
   // Phase 5: Orchestrate and render
   const report = orchestrate({ costs, forecast, optimization, anomalies, operations, actions, deepDives });
-  console.log(renderTerminal(report));
 
-  console.log(`⏱️  Total: ${((Date.now() - start) / 1000).toFixed(1)}s | 7 agents | ${Object.keys(deepDives).length} deep dives\n`);
+  if (process.argv.includes('--json')) {
+    // Output structured JSON for markdown-in-chat formatting
+    const json = { ...costs, ...forecast, ...optimization, ...anomalies, ...operations, ...actions, deepDives };
+    process.stdout.write(JSON.stringify(json));
+  } else {
+    console.log(renderTerminal(report));
+    console.log(`⏱️  Total: ${((Date.now() - start) / 1000).toFixed(1)}s | 7 agents | ${Object.keys(deepDives).length} deep dives\n`);
+  }
 }
 
 main().catch(err => { console.error('❌ Error:', err.message, err.stack); process.exit(1); });
