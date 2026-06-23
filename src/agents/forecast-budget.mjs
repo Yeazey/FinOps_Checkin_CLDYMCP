@@ -1,51 +1,68 @@
+const fmt = n => '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+
 export function analyzeForecastBudget(data) {
-  const mtdVendor = data.mtdByVendor?.results || [];
-  const budgets = data.budgets || [];
-  const forecast = data.forecast;
-  const estimate = data.estimate;
-  const dates = data.dates;
-
-  const mtdTotal = mtdVendor.reduce((s, r) => s + parseFloat(r.unblended_cost || 0), 0);
-
-  const today = new Date(dates.today);
-  const mtdStart = new Date(dates.mtdStart);
-  const daysElapsed = Math.max(1, Math.round((today - mtdStart) / 86400000));
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const { mtdVendor, priorMtdVendor, budgets, forecast, estimate, dates } = data;
+  const now = new Date(dates.today);
+  const daysElapsed = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const calendarPct = (daysElapsed / daysInMonth) * 100;
 
-  const burnRate = mtdTotal / daysElapsed;
-  const projectedMonthEnd = burnRate * daysInMonth;
+  const mtdTotal = parseFloat(mtdVendor?.meta?.aggregates?.[0]?.value || 0);
+  const priorMtdTotal = parseFloat(priorMtdVendor?.meta?.aggregates?.[0]?.value || 0);
+  const dailyRate = mtdTotal / Math.max(daysElapsed, 1);
+  const projected = dailyRate * daysInMonth;
+  const daysLeft = daysInMonth - daysElapsed;
 
-  const budgetTotal = budgets.reduce((s, b) => {
-    const month = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const entry = (b.months || []).find(m => m.month === month);
-    return s + (entry ? entry.threshold : 0);
-  }, 0);
-
-  const budgetPctConsumed = budgetTotal ? (mtdTotal / budgetTotal) * 100 : 0;
-
-  const daysToBreachList = [];
-  for (const b of budgets) {
-    const month = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const entry = (b.months || []).find(m => m.month === month);
-    if (entry && burnRate > 0) {
-      const remaining = entry.threshold - mtdTotal;
-      if (remaining > 0) {
-        const daysToBreach = Math.ceil(remaining / burnRate);
-        daysToBreachList.push({ budget: b.name, threshold: entry.threshold, daysToBreach });
-      } else {
-        daysToBreachList.push({ budget: b.name, threshold: entry.threshold, daysToBreach: 0 });
-      }
+  // Budget analysis
+  const budgetList = Array.isArray(budgets) ? budgets : [];
+  let totalBudget = 0;
+  const budgetDetails = [];
+  for (const b of budgetList) {
+    const months = b.months || [];
+    const thisMonth = months.find(m => m.month === dates.mtdStart.slice(0, 7));
+    if (thisMonth) {
+      const threshold = parseFloat(thisMonth.threshold || 0);
+      totalBudget += threshold;
+      const consumed = threshold > 0 ? (mtdTotal / threshold * 100) : 0;
+      const projectedVsBudget = threshold > 0 ? ((projected / threshold - 1) * 100).toFixed(1) : 0;
+      budgetDetails.push({ name: b.name, threshold, consumed: consumed.toFixed(1), projectedVsBudget, atRisk: projected > threshold });
     }
   }
+  const budgetPctConsumed = totalBudget > 0 ? (mtdTotal / totalBudget * 100) : 0;
+  const budgetsAtRisk = budgetDetails.filter(b => b.atRisk);
 
-  const forecastVariance = forecast?.total ? ((projectedMonthEnd - forecast.total) / forecast.total) * 100 : null;
+  // Days until budget exceeded
+  const daysToExceed = totalBudget > 0 && dailyRate > 0 ? Math.round((totalBudget - mtdTotal) / dailyRate) : null;
 
+  // Prior month run rate comparison
+  const priorDailyRate = priorMtdTotal / Math.max(daysElapsed, 1);
+  const rateChange = priorDailyRate > 0 ? ((dailyRate / priorDailyRate - 1) * 100).toFixed(1) : null;
+
+  // Forecast vs actual
+  const forecastValue = forecast?.forecast?.amount || forecast?.amount || null;
+  const estimateValue = estimate?.estimate?.amount || estimate?.amount || null;
+  const forecastVariance = forecastValue ? ((mtdTotal / parseFloat(forecastValue) - 1) * 100).toFixed(1) : null;
+
+  // Growth trajectory
+  const monthlyGrowth = priorMtdTotal > 0 ? ((projected / (priorMtdTotal * daysInMonth / daysElapsed) - 1) * 100).toFixed(1) : null;
+  const annualizedRate = dailyRate * 365;
+
+  // Alerts
   const alerts = [];
-  if (budgetPctConsumed > calendarPct + 10) alerts.push(`Budget ${budgetPctConsumed.toFixed(1)}% consumed vs ${calendarPct.toFixed(1)}% of month elapsed`);
-  for (const d of daysToBreachList) {
-    if (d.daysToBreach <= 5) alerts.push(`Budget "${d.budget}" breach in ${d.daysToBreach} days`);
+  if (budgetPctConsumed > calendarPct + 10) {
+    alerts.push({ severity: 'high', message: `Spending ahead of budget: ${budgetPctConsumed.toFixed(0)}% consumed at ${calendarPct.toFixed(0)}% of month`, savings: 0, costOfInaction: Math.round(dailyRate * 0.1), effort: 'hours', source: 'forecast', confidence: 0.9 });
+  }
+  if (budgetsAtRisk.length > 0) {
+    alerts.push({ severity: 'high', message: `${budgetsAtRisk.length} budgets projected to exceed threshold`, savings: 0, costOfInaction: 0, effort: 'hours', source: 'forecast', confidence: 0.85 });
+  }
+  if (rateChange && parseFloat(rateChange) > 15) {
+    alerts.push({ severity: 'medium', message: `Daily burn rate up ${rateChange}% vs prior month (${fmt(dailyRate)}/day vs ${fmt(priorDailyRate)}/day)`, savings: 0, costOfInaction: Math.round((dailyRate - priorDailyRate) * 7), effort: 'hours', source: 'forecast', confidence: 0.8 });
   }
 
-  return { mtdTotal, burnRate, projectedMonthEnd, budgetTotal, budgetPctConsumed, calendarPct, daysToBreachList, forecastVariance, alerts };
+  return {
+    mtdTotal, projected, dailyRate, daysElapsed, daysInMonth, daysLeft, calendarPct,
+    budgetTotal: totalBudget, budgetPctConsumed, budgetDetails, budgetsAtRisk,
+    daysToExceed, priorDailyRate, rateChange, annualizedRate, monthlyGrowth,
+    forecastVariance, alerts
+  };
 }
