@@ -1,0 +1,14 @@
+{
+  "name": "cloudability-dailycheckin",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Multi-agent FinOps daily standup powered by Cloudability MCP",
+  "scripts": {
+    "checkin": "node src/main.mjs",
+    "monday": "node src/main.mjs --monday"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "dotenv": "^16.5.0"
+  }
+}
