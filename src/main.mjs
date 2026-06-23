@@ -9,41 +9,64 @@ import { analyzeActions } from './agents/actions-insights.mjs';
 import { orchestrate } from './agents/orchestrator.mjs';
 import { renderTerminal } from './output/terminal.mjs';
 
-const isMonday = process.argv.includes('--monday') || new Date().getDay() === 1;
-
 async function main() {
   const start = Date.now();
-  console.log('🚀 Starting FinOps Daily Check-in...\n');
+  console.log('🚀 FinOps Daily Check-in — Starting multi-agent analysis...\n');
 
-  // 1. Connect and collect data
   const collector = new DataCollector();
   await collector.connect();
-  console.log('✅ Connected to Cloudability MCP');
+  console.log('✅ Connected to Cloudability MCP\n');
 
+  // Phase 1: Broad data collection
   const data = await collector.collectAll();
-  await collector.disconnect();
-  console.log(`✅ Data collected in ${((Date.now() - start) / 1000).toFixed(1)}s\n`);
+  console.log(`\n✅ Base data collected (${((Date.now() - start) / 1000).toFixed(1)}s)\n`);
 
-  // 2. Run all agents in parallel
-  console.log('🤖 Running agents...');
+  // Phase 2: Agent analysis (identifies signals)
+  console.log('🤖 Running 6 analysis agents...');
   const costs = analyzeCosts(data);
   const forecast = analyzeForecastBudget(data);
   const optimization = analyzeOptimization(data);
   const anomalies = analyzeAnomalies(data);
   const operations = analyzeOperations(data);
 
-  // 3. Actions agent synthesizes across all others
-  const actions = analyzeActions({ costs, forecast, optimization, anomalies, operations });
+  // Phase 3: Deep dives — agents found interesting things, now drill down
+  console.log('\n🔬 Phase 3: Deep-dive investigations on findings...');
+  const deepDives = {};
 
-  // 4. Orchestrator produces final report
-  const report = orchestrate({ costs, forecast, optimization, anomalies, operations, actions });
+  // Deep dive into new services
+  for (const svc of (costs.newServices || []).slice(0, 3)) {
+    const key = `${svc.vendor}|${svc.service}`;
+    deepDives[key] = await collector.deepDiveService(svc.service, svc.vendor, data.dates.weekAgo, data.dates.today);
+  }
 
-  // 5. Render to terminal
-  const output = renderTerminal(report);
-  console.log(output);
+  // Deep dive into biggest weekly risers
+  for (const mover of (costs.risers || []).slice(0, 2)) {
+    if (mover.delta > 5000) {
+      const key = `spike|${mover.vendor}|${mover.service}`;
+      deepDives[key] = await collector.deepDiveSpike(mover.service, mover.vendor, data.dates.weekAgo, data.dates.today);
+    }
+  }
 
-  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-  console.log(`\n⏱️  Total time: ${elapsed}s`);
+  // Deep dive into top anomaly service
+  if (anomalies.critical?.length > 0) {
+    const topAnomaly = anomalies.critical[0];
+    if (topAnomaly.service && topAnomaly.service !== 'Unknown') {
+      const key = `anomaly|${topAnomaly.service}`;
+      deepDives[key] = await collector.deepDiveSpike(topAnomaly.service, 'Amazon', data.dates.weekAgo, data.dates.today);
+    }
+  }
+
+  await collector.disconnect();
+  console.log(`\n✅ Deep dives complete (${((Date.now() - start) / 1000).toFixed(1)}s total)\n`);
+
+  // Phase 4: Actions agent with deep dive context
+  const actions = analyzeActions({ costs, forecast, optimization, anomalies, operations, deepDives });
+
+  // Phase 5: Orchestrate and render
+  const report = orchestrate({ costs, forecast, optimization, anomalies, operations, actions, deepDives });
+  console.log(renderTerminal(report));
+
+  console.log(`⏱️  Total: ${((Date.now() - start) / 1000).toFixed(1)}s | 7 agents | ${Object.keys(deepDives).length} deep dives\n`);
 }
 
-main().catch(err => { console.error('❌ Error:', err.message); process.exit(1); });
+main().catch(err => { console.error('❌ Error:', err.message, err.stack); process.exit(1); });
