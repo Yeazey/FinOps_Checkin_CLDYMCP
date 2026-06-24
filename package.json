@@ -5,7 +5,8 @@
   "description": "Multi-agent FinOps daily standup powered by Cloudability MCP",
   "scripts": {
     "checkin": "node src/main.mjs",
-    "monday": "node src/main.mjs --monday"
+    "monday": "node src/main.mjs --monday",
+    "markdown": "node src/main.mjs --markdown"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

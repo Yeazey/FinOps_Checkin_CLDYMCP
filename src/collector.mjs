@@ -4,7 +4,8 @@ import path from 'path';
 import 'dotenv/config';
 
 export class DataCollector {
-  constructor() { this.client = null; this.transport = null; }
+  constructor(opts = {}) { this.client = null; this.transport = null; this.quiet = opts.quiet || false; }
+  log(...args) { if (!this.quiet) console.log(...args); }
 
   async connect() {
     const mcpPath = process.env.CLOUDABILITY_MCP_PATH;
@@ -47,7 +48,7 @@ export class DataCollector {
       sort: 'unblended_costDESC', view_id: V, ...opts
     });
 
-    console.log('  📊 Phase 1: Core spend...');
+    this.log('  📊 Phase 1: Core spend...');
     const [mtdVendor, mtdService, priorMtdVendor, priorMtdService] = await Promise.all([
       cost('vendor', d.mtdStart, d.today),
       cost('vendor,service_name', d.mtdStart, d.today, { limit: 50 }),
@@ -55,7 +56,7 @@ export class DataCollector {
       cost('vendor,service_name', d.priorMonthStart, d.priorMonthSameDay, { limit: 50 }),
     ]);
 
-    console.log('  📊 Phase 2: Weekly trends & accounts...');
+    this.log('  📊 Phase 2: Weekly trends & accounts...');
     const [thisWeekService, lastWeekService, mtdAccount, instanceTypes] = await Promise.all([
       cost('vendor,service_name', d.weekAgo, d.today, { limit: 40 }),
       cost('vendor,service_name', d.twoWeeksAgo, d.weekAgo, { limit: 40 }),
@@ -63,7 +64,7 @@ export class DataCollector {
       cost('vendor,instance_type', d.mtdStart, d.today, { limit: 100, filters: ['instance_type!=none'] }),
     ]);
 
-    console.log('  📊 Phase 3: Rightsizing, anomalies, governance...');
+    this.log('  📊 Phase 3: Rightsizing, anomalies, governance...');
     const [rightsizing, anomalies, budgets, views] = await Promise.all([
       this.call('cldy_rightsizing_list', { limit: 50, sort: '-potentialSavings' }),
       this.call('cldy_anomalies_list', { startDate: d.weekAgo, endDate: d.today, viewId: '0' }),
@@ -71,7 +72,7 @@ export class DataCollector {
       this.call('list_views', {}),
     ]);
 
-    console.log('  📊 Phase 4: Forecast & estimate...');
+    this.log('  📊 Phase 4: Forecast & estimate...');
     const [forecast, estimate] = await Promise.all([
       this.call('cldy_forecast_get', {}), this.call('cldy_estimate_get', {}),
     ]);
@@ -82,7 +83,7 @@ export class DataCollector {
   // === DEEP DIVE QUERIES — triggered by agent findings ===
 
   async deepDiveService(serviceName, vendor, startDate, endDate) {
-    console.log(`  🔍 Deep dive: ${vendor} ${serviceName}...`);
+    this.log(`  🔍 Deep dive: ${vendor} ${serviceName}...`);
     const [byAccount, byRegion] = await Promise.all([
       this.call('cldy_cost_report_run', {
         dimensions: 'vendor_account_name,service_name', metrics: 'unblended_cost',
@@ -101,7 +102,7 @@ export class DataCollector {
   }
 
   async deepDiveAccount(accountName, startDate, endDate) {
-    console.log(`  🔍 Deep dive: account ${accountName}...`);
+    this.log(`  🔍 Deep dive: account ${accountName}...`);
     const byService = await this.call('cldy_cost_report_run', {
       dimensions: 'vendor_account_name,service_name', metrics: 'unblended_cost',
       start_date: startDate, end_date: endDate,
@@ -112,7 +113,7 @@ export class DataCollector {
   }
 
   async deepDiveSpike(serviceName, vendor, startDate, endDate) {
-    console.log(`  🔍 Deep dive: ${serviceName} spike...`);
+    this.log(`  🔍 Deep dive: ${serviceName} spike...`);
     const [byAccount, byUsageType] = await Promise.all([
       this.call('cldy_cost_report_run', {
         dimensions: 'vendor_account_name', metrics: 'unblended_cost',

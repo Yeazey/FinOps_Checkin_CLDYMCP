@@ -8,14 +8,16 @@ import { analyzeOperations } from './agents/operations.mjs';
 import { analyzeActions } from './agents/actions-insights.mjs';
 import { orchestrate } from './agents/orchestrator.mjs';
 import { renderTerminal } from './output/terminal.mjs';
+import { renderMarkdown } from './output/markdown.mjs';
 
 async function main() {
   const start = Date.now();
   const jsonMode = process.argv.includes('--json');
-  const log = jsonMode ? () => {} : console.log.bind(console);
+  const mdMode = process.argv.includes('--markdown');
+  const log = (jsonMode || mdMode) ? () => {} : console.log.bind(console);
   log('🚀 FinOps Daily Check-in — Starting multi-agent analysis...\n');
 
-  const collector = new DataCollector();
+  const collector = new DataCollector({ quiet: jsonMode || mdMode });
   await collector.connect();
   log('✅ Connected to Cloudability MCP\n');
 
@@ -68,9 +70,10 @@ async function main() {
   const report = orchestrate({ costs, forecast, optimization, anomalies, operations, actions, deepDives });
 
   if (process.argv.includes('--json')) {
-    // Output structured JSON for markdown-in-chat formatting
     const json = { ...costs, ...forecast, ...optimization, ...anomalies, ...operations, ...actions, deepDives };
     process.stdout.write(JSON.stringify(json));
+  } else if (mdMode) {
+    process.stdout.write(renderMarkdown(report));
   } else {
     console.log(renderTerminal(report));
     console.log(`⏱️  Total: ${((Date.now() - start) / 1000).toFixed(1)}s | 7 agents | ${Object.keys(deepDives).length} deep dives\n`);
