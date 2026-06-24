@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { DataCollector } from './collector.mjs';
 import { analyzeCosts } from './agents/cost-analysis.mjs';
 import { analyzeForecastBudget } from './agents/forecast-budget.mjs';
@@ -9,6 +12,13 @@ import { analyzeActions } from './agents/actions-insights.mjs';
 import { orchestrate } from './agents/orchestrator.mjs';
 import { renderTerminal } from './output/terminal.mjs';
 import { renderMarkdown } from './output/markdown.mjs';
+
+function loadContext() {
+  try {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+    return readFileSync(join(root, 'CONTEXT.md'), 'utf-8');
+  } catch { return null; }
+}
 
 async function main() {
   const start = Date.now();
@@ -63,14 +73,17 @@ async function main() {
   await collector.disconnect();
   log(`\n✅ Deep dives complete (${((Date.now() - start) / 1000).toFixed(1)}s total)\n`);
 
+  // Load business context
+  const businessContext = loadContext();
+
   // Phase 4: Actions agent with deep dive context
-  const actions = analyzeActions({ costs, forecast, optimization, anomalies, operations, deepDives });
+  const actions = analyzeActions({ costs, forecast, optimization, anomalies, operations, deepDives, businessContext });
 
   // Phase 5: Orchestrate and render
-  const report = orchestrate({ costs, forecast, optimization, anomalies, operations, actions, deepDives });
+  const report = orchestrate({ costs, forecast, optimization, anomalies, operations, actions, deepDives, businessContext });
 
   if (process.argv.includes('--json')) {
-    const json = { ...costs, ...forecast, ...optimization, ...anomalies, ...operations, ...actions, deepDives };
+    const json = { ...costs, ...forecast, ...optimization, ...anomalies, ...operations, ...actions, deepDives, businessContext };
     process.stdout.write(JSON.stringify(json));
   } else if (mdMode) {
     process.stdout.write(renderMarkdown(report));

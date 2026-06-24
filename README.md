@@ -83,6 +83,25 @@ node src/main.mjs --json 2>/dev/null
 
 ---
 
+## Business Context
+
+The `CONTEXT.md` file in the project root gives the agents business-specific knowledge that Cloudability data alone can't provide. **Edit this file with your own details** — the agents read it on every run.
+
+Sections:
+
+| Section | What to put here | How agents use it |
+|---------|-----------------|-------------------|
+| **Top Priorities** | Current business objectives, OKRs, focus areas | Ranks findings by business relevance |
+| **Key Business Details** | Migrations, rearchitectures, platform changes | Distinguishes planned spend from waste |
+| **Personas & Teams** | Who owns what accounts/services | Assigns action items to the right people |
+| **Seasonality & Revenue** | Traffic patterns, peak periods, fiscal calendar | Avoids false-flagging expected spikes |
+| **Active Initiatives** | Upcoming launches, load tests, planned changes | Correlates spend changes to known events |
+| **Cost Allocation & Tagging** | Key tags, shared accounts, dimension mappings | Interprets unallocated spend correctly |
+
+The context is included in `--json` output (as `businessContext`) so AI tools formatting the report can factor it into their narrative.
+
+---
+
 ## Output Modes
 
 | Mode | Command | Use Case |
